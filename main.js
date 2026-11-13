@@ -5,8 +5,12 @@
 // Layout, top-packed, no spacers, no justify (page 568x300 -> content 536x232):
 // ring row 160 + 8 + buttons 26 + 8 + presets 26 = 228 <= 232.
 "use strict";
-const url = "https://api.rawg.io/api/games?key=";
-const apikey = "e1806d4921bb4981912b086c3c24d315";
+const url = "https://api.rawg.io/api/games";
+const apikey = "?key=e1806d4921bb4981912b086c3c24d315";
+
+const os = require("os");
+const fs = require("fs");
+const path = require("path");
 
 const fenn = require("./fenn");
 // Fenn 0.4.0 uyumluluk: `row` + align:"center" satiri dikey yayiyor; varsayilan hizalama sikipaketler.
@@ -136,20 +140,59 @@ function fmt(ms) {
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
 
-async function getData() {
-  try {
-    const response = await fetch(url + apikey);
-    const data = await response.json();
-    return data.games[0];
-  } catch (error) {
-    return "mince";
+let tmpImage = null;
+
+async function downloadTemp(imgUrl) {
+  const res = await fetch(imgUrl);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const file = path.join(os.tmpdir(), "fenn-game-" + Date.now() + ".jpg");
+  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  return file;
+}
+
+function cleanupTemp() {
+  if (tmpImage) {
+    try {
+      fs.unlinkSync(tmpImage);
+    } catch {}
+    tmpImage = null;
   }
 }
 
-let message = "";
+var gameData = {
+  name: "Chargement",
+  background_image: "",
+  image64: null,
+};
+
+async function getData() {
+  try {
+    const response = await fetch(url + "/202" + apikey);
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return { name: "Echec du chargement !" };
+  }
+}
+
 async function main() {
-  message = "Chargement...";
-  message = await getData();
+  gameData.name = "Chargement...";
+  const data = await getData();
+  if (data) {
+    gameData = {
+      ...data,
+      name: data.name,
+      background_image: data.background_image,
+    };
+    if (data.background_image) {
+      try {
+        cleanupTemp(); // supprime l'ancienne image
+        tmpImage = await downloadTemp(data.background_image);
+      } catch (e) {
+        app.log("image: " + e.message, "error");
+      }
+    }
+  }
   draw();
 }
 
@@ -308,7 +351,15 @@ function pageView() {
     [
       fenn.row(
         [
-          fenn.canvas(RING, ringShapes(), { width: RING }),
+          tmpImage
+            ? fenn.image({
+                path: tmpImage,
+                width: 200,
+                height: 200,
+                rounding: 8,
+              })
+            : fenn.spacer(200),
+
           fenn.column(
             [
               fenn.card(
@@ -317,7 +368,7 @@ function pageView() {
                     [
                       fenn.column(
                         [
-                          fenn.text(message, {
+                          fenn.text(gameData.name, {
                             size: "big",
                             bold: true,
                             color: doneNote ? "accent" : "text",
@@ -547,6 +598,7 @@ app.onMessage(
   "shutdown",
   guard(() => {
     stopTick();
+    cleanupTemp();
     if (running) remaining = Math.max(0, endAt - Date.now());
     running = false;
     ensureToday();
