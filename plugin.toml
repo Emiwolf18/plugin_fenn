@@ -1,5 +1,5 @@
-id      = "pomodoro"
-name    = "Pomodoro · Odak"
+id      = "pomodorotest"
+name    = "Pomodoro · Test"
 icon    = "timer"
 size    = "wide"
 run     = ["node", "main.js"]
